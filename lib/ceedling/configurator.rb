@@ -67,40 +67,42 @@ class Configurator
 
   # The default values defined in defaults.rb (eg. DEFAULT_TOOLS_TEST) are populated
   # into @param config
-  def populate_defaults(config)
-    new_config = DEFAULT_CEEDLING_CONFIG.deep_clone
-    new_config.deep_merge!(config)
-    config.replace(new_config)
+  def merge_ceedling_config(config, default_config)
 
-    @configurator_builder.populate_defaults( config, DEFAULT_TOOLS_TEST )
-    @configurator_builder.populate_defaults( config, DEFAULT_TOOLS_TEST_PREPROCESSORS ) if (config[:project][:use_test_preprocessor])
-    @configurator_builder.populate_defaults( config, DEFAULT_TOOLS_TEST_DEPENDENCIES )  if (config[:project][:use_deep_dependencies])
+    # Merge ceedling default config with default tools
+    default_config.replace( DEFAULT_CEEDLING_CONFIG.deep_clone )
+    default_config.deep_merge( DEFAULT_TOOLS_TEST.deep_clone )
+    default_config.deep_merge( DEFAULT_TOOLS_TEST_PREPROCESSORS.deep_clone )
+    default_config.deep_merge( DEFAULT_TOOLS_TEST_DEPENDENCIES.deep_clone )
+    default_config.deep_merge( DEFAULT_TOOLS_RELEASE.deep_clone )
+    default_config.deep_merge( DEFAULT_TOOLS_RELEASE_ASSEMBLER.deep_clone )
+    default_config.deep_merge( DEFAULT_TOOLS_RELEASE_DEPENDENCIES.deep_clone )
 
-    @configurator_builder.populate_defaults( config, DEFAULT_TOOLS_RELEASE )              if (config[:project][:release_build])
-    @configurator_builder.populate_defaults( config, DEFAULT_TOOLS_RELEASE_ASSEMBLER )    if (config[:project][:release_build] and config[:release_build][:use_assembly])
-    @configurator_builder.populate_defaults( config, DEFAULT_TOOLS_RELEASE_DEPENDENCIES ) if (config[:project][:release_build] and config[:project][:use_deep_dependencies])
+    # Merge current config with ceedling internal settings
+    config.deep_merge( CEEDLING_CONFIG_INTERNAL.deep_clone )
+
   end
 
 
-  def populate_unity_defaults(config)
-      unity = config[:unity] || {}
-      @runner_config = unity.merge(@runner_config || config[:test_runner] || {})
-  end
-
-  def populate_cmock_defaults(config)
+  def merge_cmock_config(config, default_config)
     # cmock has its own internal defaults handling, but we need to set these specific values
     # so they're present for the build environment to access;
     # note: these need to end up in the hash given to initialize cmock for this to be successful
-    cmock = config[:cmock] || {}
+
+    # populate defaults with cmock internal settings
+    default_cmock = default_config[:cmock] || {}
 
     # yes, we're duplicating the default mock_prefix in cmock, but it's because we need CMOCK_MOCK_PREFIX always available in Ceedling's environment
-    cmock[:mock_prefix] = 'Mock' if (cmock[:mock_prefix].nil?)
+    default_cmock[:mock_prefix] = 'Mock' if (default_cmock[:mock_prefix].nil?)
 
     # just because strict ordering is the way to go
-    cmock[:enforce_strict_ordering] = true                                                  if (cmock[:enforce_strict_ordering].nil?)
+    default_cmock[:enforce_strict_ordering] = true                                                  if (default_cmock[:enforce_strict_ordering].nil?)
 
-    cmock[:mock_path] = File.join(config[:project][:build_root], TESTS_BASE_PATH, 'mocks')  if (cmock[:mock_path].nil?)
-    cmock[:verbosity] = @project_verbosity                                                  if (cmock[:verbosity].nil?)
+    default_cmock[:mock_path] = File.join(config[:project][:build_root], TESTS_BASE_PATH, 'mocks')  if (default_cmock[:mock_path].nil?)
+    default_cmock[:verbosity] = @project_verbosity                                                  if (default_cmock[:verbosity].nil?)
+
+    # populate current config with cmock config
+    cmock = config[:cmock] || {}
 
     cmock[:plugins] = []                             if (cmock[:plugins].nil?)
     cmock[:plugins].map! { |plugin| plugin.to_sym }
@@ -111,13 +113,10 @@ class Configurator
 
     if (cmock[:unity_helper])
       cmock[:unity_helper] = [cmock[:unity_helper]] if cmock[:unity_helper].is_a? String
+      cmock[:includes] = [] if (cmock[:includes].nil?)
       cmock[:includes] += cmock[:unity_helper].map{|helper| File.basename(helper) }
       cmock[:includes].uniq!
     end
-
-    @runner_config = cmock.merge(@runner_config || config[:test_runner] || {})
-
-    @cmock_builder.manufacture(cmock)
   end
 
 
@@ -168,7 +167,7 @@ class Configurator
   end
 
 
-  def find_and_merge_plugins(config)
+  def find_and_merge_plugins(config, default_config)
     # plugins must be loaded before generic path evaluation & magic that happen later;
     # perform path magic here as discrete step
     config[:plugins][:load_paths].each do |path|
@@ -193,17 +192,33 @@ class Configurator
     end
 
     plugin_yml_defaults.each do |defaults|
-      @configurator_builder.populate_defaults( config, @yaml_wrapper.load(defaults) )
+      default_config.deep_merge!( @yaml_wrapper.load(defaults) )
     end
 
     plugin_hash_defaults.each do |defaults|
-      @configurator_builder.populate_defaults( config, defaults )
+      @configurator_builder.populate_defaults( default_config, defaults )
     end
 
     # special plugin setting for results printing
     config[:plugins][:display_raw_test_results] = true if (config[:plugins][:display_raw_test_results].nil?)
 
     paths_hash.each_pair { |name, path| config[:plugins][name] = path }
+  end
+
+
+  def populate_config_with_defaults(config, default_config)
+    @configurator_builder.populate_defaults( config, default_config )
+  end
+
+
+  # unity cmock initializer
+  def populate_runner_config(config)
+    unity = config[:unity] || {}
+    @runner_config = unity.merge(@runner_config || config[:test_runner] || {})
+
+    cmock = config[:cmock] || {}
+    @runner_config = cmock.merge(@runner_config)
+    @cmock_builder.manufacture(cmock)
   end
 
 

@@ -16,14 +16,16 @@ class Setupinator
 
   def do_setup(config_hash)
     @config_hash = config_hash
+    defaults_hash = {}
 
     # load up all the constants and accessors our rake files, objects, & external scripts will need;
     # note: configurator modifies the cmock section of the hash with a couple defaults to tie 
     #       project together - the modified hash is used to build cmock object
-    @ceedling[:configurator].populate_defaults( config_hash )
-    @ceedling[:configurator].populate_unity_defaults( config_hash )
-    @ceedling[:configurator].populate_cmock_defaults( config_hash )
-    @ceedling[:configurator].find_and_merge_plugins( config_hash )
+    @ceedling[:configurator].merge_ceedling_config( config_hash, defaults_hash )
+    @ceedling[:configurator].merge_cmock_config( config_hash, defaults_hash )
+    @ceedling[:configurator].find_and_merge_plugins( config_hash, defaults_hash )
+    @ceedling[:configurator].populate_config_with_defaults( config_hash, defaults_hash )
+    @ceedling[:configurator].populate_runner_config( config_hash )
     @ceedling[:configurator].merge_imports( config_hash )
     @ceedling[:configurator].eval_environment_variables( config_hash )
     @ceedling[:configurator].tools_setup( config_hash )
